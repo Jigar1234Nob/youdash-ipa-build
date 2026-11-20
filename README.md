@@ -1,28 +1,47 @@
 # YouDash IPA Build
 
-Automated build wrapper for [YouDash](https://github.com/sa4hnd/YouDash), the native YouTube integration for Apple CarPlay.
+Build an unsigned, sideloadable IPA package for [YouDash](https://github.com/sa4hnd/YouDash), the native YouTube integration for Apple CarPlay.
 
-This repository builds the open-source CarPlay integration module from the upstream source and publishes it as a GitHub Actions artifact. It does **not** include Google's proprietary YouTube app or a decrypted YouTube/YouMod IPA.
+This repository automates the upstream packaging process. It does **not** host or provide Google's proprietary YouTube app, YouMod binaries, decrypted IPAs, Apple certificates, or provisioning profiles. You must supply an input IPA that you are authorized to modify.
 
-## Build with GitHub Actions
+## What you need
 
-1. Open **Actions**.
-2. Select **Build YouDash module**.
-3. Select **Run workflow**.
-4. Download the `YouDash-module` artifact after the job completes.
+- A compatible, **decrypted** YouTube + YouMod IPA. The upstream documented baseline is YouTube 21.42.4 + YouMod 2.0.0.
+- A direct HTTPS download URL for that IPA. Store it as a GitHub Actions repository secret named `YOUDASH_INPUT_IPA_URL`. Do not commit the IPA or its URL to this repository.
+- GitHub Actions enabled for this repository.
 
-The workflow uses macOS, Xcode's iPhoneOS SDK, and Python to run the upstream `--compile-only` build. The output is `YouTubeCarPlay.dylib`.
+To add the secret, open **Settings → Secrets and variables → Actions → New repository secret**. Set the name to `YOUDASH_INPUT_IPA_URL` and the value to the direct HTTPS download URL for your own compatible IPA. The URL must be accessible to GitHub Actions without an interactive login. Keep it private.
 
-## Package an IPA
+## Build an IPA
 
-To create an unsigned IPA, follow the upstream [build guide](https://github.com/sa4hnd/YouDash/blob/main/docs/BUILD.md). You need a compatible, decrypted YouTube + YouMod IPA that you are authorized to modify. The documented baseline is YouTube 21.42.4 + YouMod 2.0.0.
+1. Open the **Actions** tab.
+2. Select **Build YouDash unsigned IPA**.
+3. Choose **Run workflow**.
+4. Keep the default bundle ID or enter one you control.
+5. Keep the default reported version unless the upstream compatibility guide tells you otherwise.
+6. Start the workflow and wait for it to finish.
+7. Open the completed run and download **YouDash-unsigned-IPA**.
+8. Extract the downloaded artifact. It contains the unsigned `.ipa` and `SHA256SUMS.txt`.
 
-For device installation, you also need your own authorized Apple signing certificate, provisioning profile, registered device, and the required CarPlay capability. This repository does not provide or bypass Apple entitlements, signing, or proprietary app assets.
+## Install with Scarlet
 
-## Upstream
+1. Download the artifact on your iPhone and extract it if iOS has not already done so.
+2. Open the `.ipa` in Scarlet and use Scarlet's import/sign/install flow.
+3. If Scarlet rejects the package, check that the IPA downloaded completely and that your signing method supports the app's required capabilities.
 
-- Source: https://github.com/sa4hnd/YouDash
-- Build instructions: https://github.com/sa4hnd/YouDash/blob/main/docs/BUILD.md
-- License: GPL-3.0 (see upstream license and notices)
+The workflow intentionally produces an **unsigned** IPA. Scarlet (or another sideloading signer) must sign it before iOS will install it. This build workflow does not receive Apple account credentials or signing certificates.
 
-The upstream project remains the source of truth. This repository is an automated build wrapper, not an independently maintained copy.
+## Important CarPlay limitation
+
+Installing the app does not automatically make YouDash work on a CarPlay screen. Upstream documents that the app requires the `com.apple.developer.carplay-video` entitlement to be authorized by the signing profile. Ordinary sideloading, including re-signing with Scarlet, cannot grant an entitlement that Apple has not authorized for that profile. A profile without that capability may let the app install while the CarPlay video integration remains unavailable.
+
+Use this only while parked and follow local laws and your vehicle's restrictions.
+
+## Upstream documentation
+
+- [YouDash source](https://github.com/sa4hnd/YouDash)
+- [Upstream build guide](https://github.com/sa4hnd/YouDash/blob/main/docs/BUILD.md)
+- [Upstream compatibility notes](https://github.com/sa4hnd/YouDash/blob/main/docs/COMPATIBILITY.md)
+- [GPL-3.0 license and notices](https://github.com/sa4hnd/YouDash/blob/main/LICENSE)
+
+This repository is a build wrapper. The upstream project remains the source of truth for code, compatibility, and build requirements.
