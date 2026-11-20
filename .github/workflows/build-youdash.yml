@@ -1,29 +1,33 @@
-name: Build YouDash module
+name: Build YouDash unsigned IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/build-youdash.yml"
-      - "README.md"
-  schedule:
-    - cron: "23 4 * * 1"
+    inputs:
+      bundle_id:
+        description: "Bundle identifier to use in the packaged app"
+        required: true
+        default: "com.jigar.youdash"
+        type: string
+      reported_version:
+        description: "YouTube compatibility version reported by the app"
+        required: true
+        default: "21.45.4"
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: youdash-module-build
+  group: youdash-ipa-build
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Compile CarPlay integration
+    name: Package YouDash for sideloading
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
-      - name: Check out this build repository
+      - name: Check out build repository
         uses: actions/checkout@v4
 
       - name: Check out upstream YouDash
@@ -33,7 +37,20 @@ jobs:
           path: upstream
           persist-credentials: false
 
-      - name: Select Xcode
+      - name: Check required private input URL
+        env:
+          INPUT_IPA_URL: ${{ secrets.YOUDASH_INPUT_IPA_URL }}
+        run: |
+          if [ -z "$INPUT_IPA_URL" ]; then
+            echo "::error::Add the YOUDASH_INPUT_IPA_URL repository secret with a direct HTTPS download URL to your own compatible, decrypted YouTube + YouMod IPA."
+            exit 1
+          fi
+          case "$INPUT_IPA_URL" in
+            https://*) ;;
+            *) echo "::error::The IPA download URL must use HTTPS."; exit 1 ;;
+          esac
+
+      - name: Select Xcode and verify iPhoneOS SDK
         run: |
           xcode-select -p
           xcrun --sdk iphoneos --show-sdk-version
@@ -45,6 +62,15 @@ jobs:
           cache: pip
           cache-dependency-path: upstream/requirements-build.txt
 
+      - name: Download supplied IPA
+        env:
+          INPUT_IPA_URL: ${{ secrets.YOUDASH_INPUT_IPA_URL }}
+        run: |
+          mkdir -p input
+          curl --fail --location --retry 3 --silent --show-error "$INPUT_IPA_URL" --output input/YouMod.ipa
+          test -s input/YouMod.ipa
+          unzip -t input/YouMod.ipa >/dev/null
+
       - name: Install build dependencies
         working-directory: upstream
         run: |
@@ -52,21 +78,34 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install -r requirements-build.txt
 
-      - name: Compile YouDash module
+      - name: Build unsigned IPA
         working-directory: upstream
-        run: .venv/bin/python scripts/build_carplay.py --compile-only
-
-      - name: Verify output
-        working-directory: upstream
+        env:
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+          REPORTED_VERSION: ${{ inputs.reported_version }}
         run: |
-          test -s build/YouTubeCarPlay.dylib
-          file build/YouTubeCarPlay.dylib
-          shasum -a 256 build/YouTubeCarPlay.dylib
+          ../upstream/.venv/bin/python scripts/build_carplay.py \
+            --ipa ../input/YouMod.ipa \
+            --unsigned \
+            --bundle-id "$BUNDLE_ID" \
+            --reported-version "$REPORTED_VERSION"
 
-      - name: Upload module artifact
+      - name: Verify packaged IPA
+        run: |
+          set -e
+          IPA="$(find upstream/dist -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          test -n "$IPA"
+          test -s "$IPA"
+          unzip -t "$IPA" >/dev/null
+          shasum -a 256 "$IPA" | tee upstream/dist/SHA256SUMS.txt
+          echo "IPA_PATH=$IPA" >> "$GITHUB_ENV"
+
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: YouDash-module
-          path: upstream/build/YouTubeCarPlay.dylib
+          name: YouDash-unsigned-IPA
+          path: |
+            ${{ env.IPA_PATH }}
+            upstream/dist/SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
