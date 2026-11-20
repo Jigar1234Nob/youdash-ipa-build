@@ -1,0 +1,72 @@
+name: Build YouDash module
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-youdash.yml"
+      - "README.md"
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youdash-module-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compile CarPlay integration
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out this build repository
+        uses: actions/checkout@v4
+
+      - name: Check out upstream YouDash
+        uses: actions/checkout@v4
+        with:
+          repository: sa4hnd/YouDash
+          path: upstream
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          xcode-select -p
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: upstream/requirements-build.txt
+
+      - name: Install build dependencies
+        working-directory: upstream
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-build.txt
+
+      - name: Compile YouDash module
+        working-directory: upstream
+        run: .venv/bin/python scripts/build_carplay.py --compile-only
+
+      - name: Verify output
+        working-directory: upstream
+        run: |
+          test -s build/YouTubeCarPlay.dylib
+          file build/YouTubeCarPlay.dylib
+          shasum -a 256 build/YouTubeCarPlay.dylib
+
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouDash-module
+          path: upstream/build/YouTubeCarPlay.dylib
+          if-no-files-found: error
+          retention-days: 14
